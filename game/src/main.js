@@ -58,6 +58,11 @@ export class Game {
     this._voiceChaseTimer = 0;
     this._chaseVoicePlayed = false;
     this._lastHit = null;
+    // Round 4 escaped celebration (finish moment only): 0..1 ramp over
+    // ~1 s from _onEscaped, eased in the escaped branch of _frame.
+    this._escapedT = 0;
+    this._escapedGapStart = 6;
+    this._escapedGapTarget = 7;
   }
 
   get stage() {
@@ -173,6 +178,10 @@ export class Game {
     this.farmer.reset();
     this.field.reset(this.rng);
     this.world.setGateLight(0, 0, 0, 0);
+    this.world.setCelebrationLight(0, 0, 0, 0);
+    this._escapedT = 0;
+    this._escapedGapStart = 6;
+    this._escapedGapTarget = 7;
     this.world.initScenery(this.rng);
     this.world.applyStage(STAGES[0]);
     this.rig.reset();
@@ -575,6 +584,14 @@ export class Game {
     this.mode = 'escaped';
     this.audio.win();
     this.hud.showOverlay('escaped', this.score, this.distanceM);
+    // Round 4 finish celebration: start the ~1 s eased ramp (driven in
+    // the escaped branch of _frame). The farmer eases back to at least
+    // 7 m behind the turkey — he gives up the chase — so the dolly-out
+    // in the rig can frame him head-to-toe; if he escaped already far
+    // back, he stays where he is (never pulled forward toward the turkey).
+    this._escapedT = 0;
+    this._escapedGapStart = this.farmer.gap;
+    this._escapedGapTarget = Math.max(this.farmer.gap, 7);
   }
 
   _pause() {
@@ -616,7 +633,33 @@ export class Game {
           else this.startRun();
         }
       }
-      this.rig.update(realDt, this.turkey.x, this.turkey.y, this.farmer.gap);
+      // Round 4 escaped celebration (finish moment ONLY — title/caught
+      // are untouched): ease everything in over ~1 s, no snap.
+      let escapedT = 0;
+      if (this.mode === 'escaped') {
+        this._escapedT = Math.min(1, this._escapedT + realDt / 1.0);
+        const t = this._escapedT;
+        escapedT = t * t * (3 - 2 * t); // smoothstep
+        // Farmer eases back to the escape gap (see _onEscaped) so the
+        // dolly-out can frame him head-to-toe; _tick no longer runs, so
+        // the mesh is posed here directly.
+        this.farmer.gap = this._escapedGapStart
+          + (this._escapedGapTarget - this._escapedGapStart) * escapedT;
+        this.farmer._applyMesh(realDt, 0);
+        // Warm celebration light, faded in. WHY two lights: the live
+        // gate light tracks the gate 2 m camera-side of the arch, which
+        // at the live stop (gate z = 3.5) lands at z = +1.5 — on the FAR
+        // side of the turkey, so the camera-facing side stays black. The
+        // fill sits on the camera side of the turkey (z = -2.4, y = 3.4)
+        // and lights the brown + cream feathers directly; the gate light
+        // itself is raised 80 -> 120 and kept on the live gate so the
+        // arch glows too. Both follow the LIVE positions (turkey.x, the
+        // live gate z), not the staged shot's.
+        const gateZ = this.field.gate ? this.field.gate.position.z : 3.5;
+        this.world.setGateLight(0, 4, gateZ - 2, 80 + 40 * escapedT);
+        this.world.setCelebrationLight(this.turkey.x, 3.4, -2.4, 150 * escapedT);
+      }
+      this.rig.update(realDt, this.turkey.x, this.turkey.y, this.farmer.gap, escapedT);
       this.particles.update(realDt);
       this.world.renderer.render(this.world.scene, this.world.camera);
       return;

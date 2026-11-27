@@ -40,7 +40,17 @@ export class CameraRig {
   }
 
   // dt is real time here: shake decays in real time, not game time.
-  update(dt, turkeyX, turkeyY, farmerGap) {
+  // escapedT (0..1, already eased by the caller) is the round-4 finish
+  // celebration amount — 0 during play, ramping to 1 over ~1 s after the
+  // escape. It dollies the camera back so it sits ~6 m behind the farmer
+  // and looks down/closer, so the farmer reads head-to-toe instead of
+  // only his hat at the bottom edge. At the base rig a farmer 2.9 m ahead
+  // of the camera puts his feet ~53° below level, past the ~38° bottom
+  // edge; 6 m behind him his feet sit ~35° below level against a bottom
+  // edge pitched down to ~-43°, with the turkey (~13 m ahead) and the
+  // gate still in frame. Only the escaped framing moves — play is
+  // untouched (escapedT = 0).
+  update(dt, turkeyX, turkeyY, farmerGap, escapedT = 0) {
     this._time += dt;
     // Farmer proximity pull-back: when the farmer closes in, ease the
     // camera back and down so his feet stay in frame instead of being cut
@@ -51,16 +61,23 @@ export class CameraRig {
     const closeness = Math.max(0, Math.min(1, (6 - farmerGap) / 4));
     const pullZ = closeness * 1.6;
     const pullY = closeness * 0.8;
+    // Round 4 escaped dolly-out: extra pull-back on top of the proximity
+    // pull-back, so the camera ends up ~6 m behind the farmer whatever
+    // gap he escaped at (gap is eased to >= 7 m by main.js, so the dolly
+    // is ~5-6 m from the base rig). A touch up (+0.3 m) keeps the gate
+    // arch in frame while the look target drops toward the farmer.
+    const escCamZ = -Math.max(farmerGap, 0) - 6.0;
+    const escDollyZ = Math.max(0, (CAMERA_BASE.z - pullZ) - escCamZ);
     // Camera follows the turkey's lane a little (30%) so lane changes read.
     const target = new THREE.Vector3(
       CAMERA_BASE.x + turkeyX * 0.3,
-      CAMERA_BASE.y + turkeyY * 0.25 - pullY,
-      CAMERA_BASE.z - pullZ,
+      CAMERA_BASE.y + turkeyY * 0.25 - pullY + escapedT * 0.3,
+      CAMERA_BASE.z - pullZ - escapedT * escDollyZ,
     );
     const lookTarget = new THREE.Vector3(
       turkeyX * 0.5,
-      1.2 + turkeyY * 0.2,
-      CAMERA_LOOK_AHEAD_Z,
+      1.2 + turkeyY * 0.2 - escapedT * 0.7,
+      CAMERA_LOOK_AHEAD_Z - escapedT * 10,
     );
     const k = 1 - Math.exp(-8 * dt);
     this._smoothPos.lerp(target, k);

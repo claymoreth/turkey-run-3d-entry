@@ -257,6 +257,12 @@ export class World {
     // Warm, camera-side, so the turkey reads against the dark kitchen
     // instead of going full silhouette inside the arch.
     this.gateLight = new THREE.PointLight(0xffd9a0, 0, 26, 1.6);
+    // Celebration fill light (round 4): same add-only-when-lit pattern as
+    // the gate light. Warm gold, placed on the CAMERA side of the turkey
+    // during the escaped moment only, so the turkey's camera-facing side
+    // (brown + cream) reads instead of going black silhouette in the
+    // night kitchen. Off (removed from the scene) everywhere else.
+    this.celebrationLight = new THREE.PointLight(0xffd9a0, 0, 30, 1.6);
 
     this.groundTex = makeGroundTexture();
     const ground = new THREE.Mesh(
@@ -352,6 +358,21 @@ export class World {
     this.gateLight.position.set(x, y, z);
     this.gateLight.intensity = intensity;
     if (!this.gateLight.parent) this.scene.add(this.gateLight);
+  }
+
+  // Celebration fill light (round 4): same pattern as setGateLight —
+  // intensity 0 (or less) removes it from the scene so it costs nothing
+  // outside the escaped moment; otherwise it is placed at (x, y, z) and
+  // added to the scene.
+  setCelebrationLight(x, y, z, intensity) {
+    if (!intensity || intensity <= 0) {
+      if (this.celebrationLight.parent) this.scene.remove(this.celebrationLight);
+      this.celebrationLight.intensity = 0;
+      return;
+    }
+    this.celebrationLight.position.set(x, y, z);
+    this.celebrationLight.intensity = intensity;
+    if (!this.celebrationLight.parent) this.scene.add(this.celebrationLight);
   }
 
   applyStage(stage) {
