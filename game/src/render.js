@@ -42,11 +42,20 @@ export class CameraRig {
   // dt is real time here: shake decays in real time, not game time.
   update(dt, turkeyX, turkeyY, farmerGap) {
     this._time += dt;
+    // Farmer proximity pull-back: when the farmer closes in, ease the
+    // camera back and down so his feet stay in frame instead of being cut
+    // off at the bottom edge (from the base rig, feet at gap 2 sit ~41°
+    // below level, past the ~39° bottom edge). Ramps in between gap 6 m
+    // and gap 2 m; at the 4.5 m equilibrium the rig is nearly unchanged,
+    // and only a SURGE-close farmer gets the full pull-back.
+    const closeness = Math.max(0, Math.min(1, (6 - farmerGap) / 4));
+    const pullZ = closeness * 1.6;
+    const pullY = closeness * 0.8;
     // Camera follows the turkey's lane a little (30%) so lane changes read.
     const target = new THREE.Vector3(
       CAMERA_BASE.x + turkeyX * 0.3,
-      CAMERA_BASE.y + turkeyY * 0.25,
-      CAMERA_BASE.z,
+      CAMERA_BASE.y + turkeyY * 0.25 - pullY,
+      CAMERA_BASE.z - pullZ,
     );
     const lookTarget = new THREE.Vector3(
       turkeyX * 0.5,
@@ -69,7 +78,7 @@ export class CameraRig {
     this.camera.position.copy(this._smoothPos).add(this._shakeOffset);
     // Farmer visible when close: tilt the look target down toward him.
     const look = this._smoothLook.clone();
-    if (farmerGap < 7) look.y -= (7 - farmerGap) * 0.08;
+    if (farmerGap < 7) look.y -= (7 - farmerGap) * 0.12;
     this.camera.lookAt(look);
   }
 }

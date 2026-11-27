@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Turkey Run 3D — Lari dari Petani!</title>
+<title>Turkey Run 3D — Escape the Farmer!</title>
 <link rel="icon" href="data:,">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,6 +23,13 @@
   #hud-lives { font-size: 22px; color: #ff5a5a; letter-spacing: 2px; }
   #hud-stage { font-size: 15px; letter-spacing: 2px; color: #ffd76e; }
   #hud-speed, #hud-corn { font-size: 15px; }
+  #hud-toast {
+    position: fixed; top: 92px; left: 0; right: 0; z-index: 6;
+    text-align: center; pointer-events: none;
+    font-size: 22px; font-weight: 900; letter-spacing: 1px; color: #ffd76e;
+    text-shadow: 0 2px 3px rgba(0,0,0,.9), 0 0 10px rgba(0,0,0,.65);
+    opacity: 0; transition: opacity .25s;
+  }
   #farmer-bar {
     width: 180px; height: 12px; border: 2px solid #fff; border-radius: 6px;
     background: rgba(0,0,0,.45); overflow: hidden;
@@ -72,11 +79,12 @@
   <div class="col right">
     <div id="hud-lives">❤❤❤</div>
     <div id="farmer-bar"><div id="farmer-fill"></div></div>
-    <div id="farmer-label">Petani mengejar</div>
+    <div id="farmer-label">Farmer chasing</div>
     <div id="hud-speed">12 m/s</div>
     <div id="hud-corn">🌽 0</div>
   </div>
 </div>
+<div id="hud-toast"></div>
 <div id="overlay" style="display:none">
   <div id="overlay-title">🦃 TURKEY RUN 3D</div>
   <div id="overlay-sub"></div>
@@ -84,7 +92,7 @@
   <div id="overlay-hint"></div>
 </div>
 <div id="loading">
-  <p>🦃 Memuat Turkey Run 3D...</p>
+  <p>🦃 Loading Turkey Run 3D...</p>
   <div id="loading-track"><div id="loading-bar"></div></div>
 </div>
 <script type="module" src="src/main.js"></script>

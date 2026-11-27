@@ -42,9 +42,17 @@ export class ObstacleField {
   }
 
   _gapFor(distanceM, stageIndex) {
-    // Gaps grow looser as the run goes on: base + stage bonus + distance term.
-    const base = 15 + stageIndex * 3 + distanceM * 0.004;
-    return base + this.rng() * 12;
+    // FASE 2B: gaps tighten in stage 2 (BARN) and 3 (KITCHEN) so a perfect
+    // run is no longer a free 0-hit stroll; stage 1 (FARMYARD) stays
+    // friendly for learning. (config.js untouched — the override lives
+    // here; base/spread per stage, distance term only in stage 0.)
+    // Mean gap: stage 0 ~21 m, stage 1 ~21 m, stage 2 ~18 m.
+    // (Iterasi 7: stage 2 20 -> 18 m — pada 20 m, 5 dari 13 escape
+    // manusiawi masih 0-hit; targetnya escape 1-2 hit di kebanyakan seed.
+    // Stage 1 tetap 21 m: kematian dini sudah cukup sering di sana.)
+    if (stageIndex === 0) return 15 + distanceM * 0.004 + this.rng() * 12;
+    if (stageIndex === 1) return 16 + this.rng() * 10;
+    return 14 + this.rng() * 8;
   }
 
   _spawnObstacle(kind, lane, z) {
@@ -114,7 +122,29 @@ export class ObstacleField {
         return;
       }
     }
-    if (roll < 0.55) {
+    // FASE 2B roll budget (stage 0 unchanged: single 55 / two 30 / pickup 15):
+    // stage 1: combo 10 / single 45 / two 30 / pickup 15.
+    // stage 2: combo 10 / chase 8 / single 37 / two 30 / pickup 15.
+    if (stageIndex >= 1 && roll < 0.10) {
+      // FASE 2B mixed row (stage 1+): a beam (slide) in one lane and a
+      // jump obstacle in another at the SAME z — the player must pick the
+      // right move per lane, not just any free lane. Third lane free.
+      // Runs only after the beam intro (intro check above returns first).
+      const freeLane = Math.floor(this.rng() * 3);
+      const lanes = [0, 1, 2].filter((l) => l !== freeLane);
+      const jumpKinds = ['fence', 'hay', 'pot'];
+      this._spawnObstacle('beam', lanes[0], SPAWN_AHEAD_Z);
+      this._spawnObstacle(jumpKinds[Math.floor(this.rng() * jumpKinds.length)], lanes[1], SPAWN_AHEAD_Z);
+    } else if (stageIndex === 2 && roll < 0.18) {
+      // FASE 2B staggered chase (stage 2): a knifeFall forces a lane
+      // change, then a fence 8 m behind it in another lane forces a jump
+      // right after. Third lane free throughout.
+      const laneA = Math.floor(this.rng() * 3);
+      let laneB = Math.floor(this.rng() * 3);
+      if (laneB === laneA) laneB = (laneB + 1) % 3;
+      this._spawnObstacle('knifeFall', laneA, SPAWN_AHEAD_Z);
+      this._spawnObstacle('fence', laneB, SPAWN_AHEAD_Z + 8);
+    } else if (roll < 0.55) {
       // Single obstacle, sometimes with a pickup in a free lane.
       const lane = Math.floor(this.rng() * 3);
       this._spawnObstacle(allowed[Math.floor(this.rng() * allowed.length)], lane, SPAWN_AHEAD_Z);

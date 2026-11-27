@@ -5,11 +5,12 @@
 export const FARMER_STATES = ['CHASE', 'SURGE', 'LAG', 'STUMBLE'];
 
 const EQUILIBRIUM_GAP = 4.5;
-const SURGE_ENTER_GAP = 2.5;
-const SURGE_HOLD_SECONDS = 0.4;
+const SURGE_ENTER_GAP = 3.0;
+const SURGE_HOLD_SECONDS = 0.25;
 const SURGE_WINDUP_SECONDS = 0.4;
 const SURGE_LUNGE_SECONDS = 0.5;
-const SURGE_LUNGE_MULTIPLIER = 1.15;
+const SURGE_LUNGE_MULTIPLIER = 1.18;
+const SURGE_COOLDOWN_SECONDS = 2.0;
 const LAG_ENTER_GAP = 12;
 const LAG_MAX_SECONDS = 2.5;
 const CATCHUP_MULTIPLIER = 1.15;
@@ -20,7 +21,7 @@ const REACTION_DELAY_SECONDS = 0.3;
 
 export class Farmer {
   constructor() {
-    this.gap = 8; // metres behind the turkey
+    this.gap = 6; // metres behind the turkey (FASE 2B: was 8 — closer base)
     this.state = 'CHASE';
     this.mesh = null;
     this._stateTimer = 0;
@@ -32,6 +33,7 @@ export class Farmer {
     this._stumbleTimer = 0;
     this._windupTimer = 0;
     this._lungeTimer = 0;
+    this._surgeCooldown = 0;
     this._bobPhase = 0;
   }
 
@@ -40,7 +42,7 @@ export class Farmer {
   }
 
   reset() {
-    this.gap = 8;
+    this.gap = 6; // FASE 2B: was 8
     this.state = 'CHASE';
     this._stateTimer = 0;
     this._reactionTimer = 0;
@@ -51,11 +53,12 @@ export class Farmer {
     this._stumbleTimer = 0;
     this._windupTimer = 0;
     this._lungeTimer = 0;
+    this._surgeCooldown = 0;
   }
 
-  // Called when the turkey is touched: farmer knocked back to gap 8 m.
+  // Called when the turkey is touched: farmer knocked back to gap 6 m.
   knockBack() {
-    this.gap = 8;
+    this.gap = 6;
     this.state = 'STUMBLE';
     this._stumbleTimer = 0.8;
     this._stateTimer = 0;
@@ -73,6 +76,7 @@ export class Farmer {
   }
 
   _commitState(next) {
+    const prev = this.state;
     this.state = next;
     this._stateTimer = 0;
     this._pendingState = null;
@@ -80,6 +84,12 @@ export class Farmer {
       this._windupTimer = SURGE_WINDUP_SECONDS;
       this._lungeTimer = 0;
     }
+    // FASE 2B cooldown: a surge ends with the gap (~1.9 m) still below the
+    // 3.0 m enter threshold, so without this the farmer would re-surge
+    // immediately in a loop (verified: 36 surges in one seed-4 run). The
+    // 2 s window lets the gap recover above the threshold first; a second
+    // hit inside the window still catches the turkey via plain CHASE.
+    if (next === 'CHASE' && prev === 'SURGE') this._surgeCooldown = SURGE_COOLDOWN_SECONDS;
     if (next === 'LAG') this._lagTimer = 0;
     if (next === 'CHASE') this._catchupTimer = CATCHUP_SECONDS;
   }
@@ -96,6 +106,7 @@ export class Farmer {
   // a second hit while he is close is what gets the turkey caught.
   update(dt, turkeySpeed, cruiseSpeed) {
     this._stateTimer += dt;
+    if (this._surgeCooldown > 0) this._surgeCooldown -= dt;
 
     // Reaction delay: a requested transition only lands after 0.3 s.
     if (this._pendingState) {
@@ -114,7 +125,7 @@ export class Farmer {
 
     // Transition requests (different enter/exit thresholds = hysteresis).
     if (canSwitch && !this._pendingState) {
-      if (this.state === 'CHASE' && this.gap < SURGE_ENTER_GAP) {
+      if (this.state === 'CHASE' && this.gap < SURGE_ENTER_GAP && this._surgeCooldown <= 0) {
         this._surgeHoldTimer += dt;
         if (this._surgeHoldTimer >= SURGE_HOLD_SECONDS) {
           this._surgeHoldTimer = 0;
@@ -161,8 +172,9 @@ export class Farmer {
       // ~2.4 m, a second stumble while close is what causes a touch.
       farmerSpeed = Math.min(farmerSpeed, turkeySpeed + 3.5);
       // Catch-up boost only when the farmer is BEHIND equilibrium: after a
-      // SURGE the gap is ~2.6 m, and a 1.15x boost there would close it to
-      // a touch all by itself (a single hit would cost 2 lives).
+      // SURGE the gap is ~1.9 m (FASE 2B lunge 1.18x / 0.5 s, incl. the
+      // 0.3 s exit reaction delay), and a 1.15x boost there would close it
+      // to a touch all by itself (a single hit would cost 2 lives).
       if (this._catchupTimer > 0) {
         this._catchupTimer -= dt;
         if (this.gap > EQUILIBRIUM_GAP) {

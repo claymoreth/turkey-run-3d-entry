@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import {
   LANES, FINISH_DISTANCE, MAX_LIVES, FIXED_DT, STAGES, stageForDistance,
-  createRng, OBSTACLE_TYPES,
+  createRng, OBSTACLE_TYPES, HITBOX_SCALE, TURKEY_HALF_WIDTH,
 } from './config.js';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js';
@@ -40,6 +40,10 @@ export class Game {
     this.distanceM = 0;
     this.score = 0;
     this.corn = 0;
+    this.nearMissBonus = 0; // FASE 2B: accumulated +5 near-miss bonuses
+    this.pickupBonus = 0; // FINAL FIX: accumulated +25 pie/feather bonuses (score is recomputed each tick, so a direct score += 25 was wiped next tick)
+    this.nearMisses = 0; // FASE 2B: near-miss count (see _checkNearMisses)
+    this._lastNearMiss = null; // gameTime of the last near miss (or null)
     this.lives = MAX_LIVES;
     this.speed = STAGES[0].speed;
     this.stageIndex = 0;
@@ -72,6 +76,9 @@ export class Game {
       turkeyLane: this.turkey.lane,
       turkeyX: Math.round(this.turkey.x * 100) / 100,
       turkeyY: Math.round(this.turkey.y * 100) / 100,
+      nearMisses: this.nearMisses,
+      pickupBonus: this.pickupBonus,
+      lastNearMiss: this._lastNearMiss,
       lastHit: this._lastHit,
       // Nearest obstacle ahead (any lane) — verifier telemetry.
       nearest: (() => {
@@ -140,6 +147,10 @@ export class Game {
     this.distanceM = 0;
     this.score = 0;
     this.corn = 0;
+    this.nearMissBonus = 0;
+    this.pickupBonus = 0;
+    this.nearMisses = 0;
+    this._lastNearMiss = null;
     this.lives = MAX_LIVES;
     this.stageIndex = 0;
     this.speed = STAGES[0].speed;
@@ -185,13 +196,20 @@ export class Game {
       this.turkey.y = 0.85;
       this.turkey.jumping = true;
       this.turkey.applyToMesh();
-      this.farmer.gap = 4.5;
+      // Stage the farmer close (gap 1.0 m, offset to the left lane) so he
+      // reads head-to-toe in frame: from the base rig his feet sit ~34°
+      // below level against a ~38° bottom edge. The rig is fed gap 7 on
+      // purpose — the real 1.0 m gap would trigger the gameplay proximity
+      // pull-back and shrink the turkey below the 120 px target; the shot
+      // keeps the base rig so the turkey stays large.
+      this.farmer.gap = 1.0;
       this.farmer._applyMesh(0, 0);
+      this.farmer.mesh.position.x = -2.2;
       this.distanceM = 120;
       this.score = 130;
       this.corn = 3;
       this.world.applyStage(STAGES[0]);
-      this.rig.update(0.016, 0, 0.85, 4.5);
+      this.rig.update(0.016, 0, 0.85, 7);
       this.hud.hideOverlay();
       this._updateHud();
     } else if (shot === 'kitchen') {
@@ -217,9 +235,16 @@ export class Game {
       this.score = 1680;
       this.corn = 14;
       this.turkey.x = 0;
+      this.turkey.y = 0.85;
+      this.turkey.jumping = true;
       this.turkey.applyToMesh();
+      // Gate close and large (1.4x) so the arch is unmistakable, and the
+      // turkey mid-leap 1.5 m in front of the gate plane — framed by the
+      // posts with the leafy arch above it, reading as passing through the
+      // gate rather than a speck on the horizon.
       const gate = this.world.buildMesh('gate');
-      gate.position.set(0, 0, 9);
+      gate.position.set(0, 0, 1.5);
+      gate.scale.setScalar(1.4);
       this.world.scene.add(gate);
       this.farmer.gap = 14;
       this.farmer._applyMesh(0, 0);
@@ -384,7 +409,7 @@ export class Game {
     this.turkey.applyToMesh();
 
     this.distanceM += speed * dt;
-    this.score = Math.floor(this.distanceM) + this.corn * 10;
+    this.score = Math.floor(this.distanceM) + this.corn * 10 + this.nearMissBonus + this.pickupBonus;
 
     // Stage transitions.
     const stage = stageForDistance(this.distanceM);
@@ -415,6 +440,7 @@ export class Game {
     const { hit, pickups } = this.field.checkCollisions(this.turkey);
     if (hit && this.invulnTimer <= 0) this._onObstacleHit(hit);
     for (const p of pickups) this._onPickup(p);
+    this._checkNearMisses();
 
     if (this.distanceM >= FINISH_DISTANCE) this._onEscaped();
     this._updateHud();
@@ -431,6 +457,38 @@ export class Game {
     this.audio.playVoice('chase');
     if (this.lives <= 0) {
       this._onCaught();
+    }
+  }
+
+  // FASE 2B — near-miss bonus: an obstacle that just crossed the turkey's
+  // plane (z <= 0) without a hit, cleared VERY closely, awards +5.
+  // Close = lateral clearance 0..0.6 m from the obstacle edge, or jump
+  // clearance 0..0.3 m above its clear height. Each obstacle counts once
+  // (o._nmCounted). Traps only count while actually live (active flame,
+  // landed knife, dangerous swing) — passing a spent trap is not close.
+  // NOTE: the bonus now shows as a transient "NEAR MISS +5" toast in the
+  // HUD (hud.showToast) plus the nearMisses counter in snapshot().
+  _checkNearMisses() {
+    for (const o of this.field.obstacles) {
+      if (o._nmCounted || o.hit) continue;
+      if (o.z > 0 || o.z <= -2) continue;
+      o._nmCounted = true;
+      if (o.kind === 'firejet' && o.state !== 'active') continue;
+      if (o.kind === 'knifeFall' && o.state !== 'landed') continue;
+      if (o.kind === 'knifeSwing' && !o.dangerous) continue;
+      const def = OBSTACLE_TYPES[o.kind];
+      const halfX = (def.size.x * HITBOX_SCALE) / 2;
+      const lateralClear = Math.abs(this.turkey.x - o.x) - (halfX + TURKEY_HALF_WIDTH);
+      const verticalClear = this.turkey.y - def.clearHeight;
+      const closeLateral = lateralClear >= 0 && lateralClear < 0.6;
+      const closeJump = (def.clearBy === 'jump' || def.clearBy === 'jumpOrLane' || def.clearBy === 'lane')
+        && verticalClear >= 0 && verticalClear < 0.3;
+      if (closeLateral || closeJump) {
+        this.nearMissBonus += 5;
+        this.nearMisses += 1;
+        this._lastNearMiss = Math.round(this.gameTime * 10) / 10;
+        this.hud.showToast('NEAR MISS +5');
+      }
     }
   }
 
@@ -452,13 +510,13 @@ export class Game {
       this.audio.corn();
     } else if (pickup.kind === 'feather') {
       if (this.lives < MAX_LIVES) this.lives += 1;
-      else this.score += 25;
+      else this.pickupBonus += 25;
       this.audio.pickup();
       this.particles.feathers(this.turkey.x, 1, 0);
     } else if (pickup.kind === 'pie') {
       this.boostTimer = 2;
       this.invulnTimer = Math.max(this.invulnTimer, 2);
-      this.score += 25;
+      this.pickupBonus += 25;
       this.audio.pickup();
       this.particles.feathers(this.turkey.x, 1, 0);
     }
@@ -562,8 +620,8 @@ try {
 function showFatal(err) {
   const el = document.getElementById('loading');
   if (el) {
-    el.innerHTML = '<p>🦃 Turkey Run 3D tidak bisa jalan di browser ini.</p>'
-      + '<p style="font-size:15px;font-weight:400">WebGL tidak tersedia — coba browser lain atau aktifkan akselerasi grafis.</p>';
+    el.innerHTML = '<p>🦃 Turkey Run 3D cannot run in this browser.</p>'
+      + '<p style="font-size:15px;font-weight:400">WebGL is unavailable — try another browser or enable hardware acceleration.</p>';
   }
   console.error(err);
 }

@@ -96,6 +96,59 @@ function fallbackMesh(name) {
   return mesh;
 }
 
+const FLOWER_COLORS = [0xff6fa5, 0xffd23e, 0xffffff, 0xff8a3c, 0xb678e0];
+
+// Cheap primitive props (no GLB exists for these): a squashy bush, a tiny
+// flower on a stem, a puffy cloud, a V-shaped bird silhouette.
+function makeBushMesh() {
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4a7a35, roughness: 1, flatShading: true });
+  const group = new THREE.Group();
+  const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.55, 0), mat);
+  blob.scale.set(1.2, 0.75, 1);
+  blob.position.y = 0.35;
+  blob.castShadow = true;
+  blob.receiveShadow = true;
+  group.add(blob);
+  return group;
+}
+
+function makeFlowerMesh(color) {
+  const group = new THREE.Group();
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f7a35, roughness: 1 });
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.3, 5), stemMat);
+  stem.position.y = 0.15;
+  const headMat = new THREE.MeshStandardMaterial({ color, roughness: 0.8, flatShading: true });
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09, 0), headMat);
+  head.position.y = 0.34;
+  group.add(stem, head);
+  return group;
+}
+
+function makeCloudMesh() {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+  const group = new THREE.Group();
+  const puffs = [[0, 0, 0, 1.6], [-1.4, -0.2, 0.2, 1.1], [1.4, -0.25, -0.1, 1.2], [0.4, 0.5, 0, 1.0]];
+  for (const [x, y, z, r] of puffs) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
+    puff.position.set(x, y, z);
+    puff.scale.y = 0.55;
+    group.add(puff);
+  }
+  return group;
+}
+
+function makeBirdMesh() {
+  const mat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 1 });
+  const group = new THREE.Group();
+  for (const s of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.03, 0.16), mat);
+    wing.position.x = s * 0.4;
+    wing.rotation.z = s * 0.45;
+    group.add(wing);
+  }
+  return group;
+}
+
 function makeGroundTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -184,6 +237,8 @@ export class World {
 
     this.templates = {};
     this.scenery = [];
+    this.clouds = [];
+    this.birds = [];
     this.sceneryRng = null;
     this._onResize = () => this.resize();
     window.addEventListener('resize', this._onResize);
@@ -248,23 +303,93 @@ export class World {
     this.ovenLight.intensity = stage.index === 2 ? 60 : 0;
   }
 
-  // Scenery pool: trees + barn walls recycled from ahead to behind.
+  // Scenery pool: a lived-in farmyard edge — fence lines, trees, distant
+  // barns, hay bales, pumpkins, bushes and flowers — recycled from ahead
+  // to behind. Nothing is placed on the lanes (|x| < 3.6 stays clear) so
+  // props never hide an obstacle or block the turkey.
   initScenery(rng) {
     this.sceneryRng = rng;
     for (const item of this.scenery) this.scene.remove(item.mesh);
     this.scenery = [];
-    for (let i = 0; i < 26; i++) {
-      const side = i % 2 === 0 ? -1 : 1;
-      const kind = rng() < 0.75 ? 'tree' : 'barnwall';
-      const mesh = this.buildMesh(kind);
-      const z = 85 - i * 4.5 - rng() * 3;
-      const x = side * (5.5 + rng() * 6);
-      mesh.position.set(x, 0, z);
-      mesh.rotation.y = rng() * Math.PI * 2;
-      const s = kind === 'tree' ? 0.9 + rng() * 0.7 : 1;
-      mesh.scale.setScalar(s);
+    for (const c of this.clouds) this.scene.remove(c.mesh);
+    this.clouds = [];
+    for (const b of this.birds) this.scene.remove(b.mesh);
+    this.birds = [];
+
+    const add = (kind, mesh, x, z, opts = {}) => {
+      mesh.position.set(x, opts.y || 0, z);
+      mesh.rotation.y = opts.rotY !== undefined ? opts.rotY : rng() * Math.PI * 2;
+      const s = opts.scale || 1;
+      mesh.scale.set(opts.sx !== undefined ? opts.sx : s, opts.sy !== undefined ? opts.sy : s, opts.sz !== undefined ? opts.sz : s);
       this.scene.add(mesh);
-      this.scenery.push({ mesh, x, speed: 1 });
+      this.scenery.push({
+        mesh, kind, fixedX: !!opts.fixedX,
+        xMin: opts.xMin !== undefined ? opts.xMin : Math.abs(x),
+        xMax: opts.xMax !== undefined ? opts.xMax : Math.abs(x),
+      });
+    };
+
+    // Fence lines along both track edges (fence GLB runs along X, so it is
+    // rotated to run along Z and stretched to ~7.8 m per segment).
+    for (let i = 0; i < 24; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const mesh = this.buildMesh('fence');
+      add('fenceLine', mesh, side * 4.3, 82 - Math.floor(i / 2) * 10 - rng() * 1.5,
+        { fixedX: true, rotY: Math.PI / 2, sx: 4 });
+    }
+    // Trees, near and far.
+    for (let i = 0; i < 18; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      add('tree', this.buildMesh('tree'), side * (6 + rng() * 6), 85 - i * 5.7 - rng() * 3,
+        { scale: 0.9 + rng() * 0.8, xMin: 6, xMax: 12 });
+    }
+    // Distant barns: kept inside the 26 m ground plane (|x| + half-width ≤ 13)
+    // and at least 30 m ahead — a barn any closer looms over the track like
+    // a billboard instead of reading as a barn in the distance.
+    for (let i = 0; i < 4; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      // rotY π: the barn front (door + gable) faces the track/camera instead
+      // of a random edge-on angle that reads as a red silo.
+      add('barnwall', this.buildMesh('barnwall'), side * (9.5 + rng() * 1.5), 30 + i * 18 + rng() * 5,
+        { scale: 1.2 + rng() * 0.2, xMin: 9.5, xMax: 11, rotY: Math.PI });
+    }
+    // Hay bales and pumpkins scattered just off the track.
+    for (let i = 0; i < 8; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      add('hay', this.buildMesh('hay'), side * (4.8 + rng() * 3.2), 80 - i * 12 - rng() * 4,
+        { scale: 0.9 + rng() * 0.3, xMin: 4.8, xMax: 8 });
+    }
+    for (let i = 0; i < 8; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      add('pumpkin', this.buildMesh('pumpkin'), side * (4.2 + rng() * 2.8), 74 - i * 12 - rng() * 4,
+        { scale: 0.9 + rng() * 0.4, xMin: 4.2, xMax: 7 });
+    }
+    // Bushes and flowers hug the track edge.
+    for (let i = 0; i < 12; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      add('bush', makeBushMesh(), side * (3.9 + rng() * 3.1), 83 - i * 8.5 - rng() * 3,
+        { scale: 0.7 + rng() * 0.5, xMin: 3.9, xMax: 7 });
+    }
+    for (let i = 0; i < 24; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const color = FLOWER_COLORS[Math.floor(rng() * FLOWER_COLORS.length)];
+      add('flower', makeFlowerMesh(color), side * (3.7 + rng() * 2.3), 84 - i * 4.3 - rng() * 2,
+        { scale: 0.8 + rng() * 0.4, xMin: 3.7, xMax: 6 });
+    }
+    // Clouds high up and birds crossing the sky (separate pools: they
+    // drift on their own parallax instead of scrolling with the ground).
+    for (let i = 0; i < 6; i++) {
+      const mesh = makeCloudMesh();
+      mesh.position.set((rng() < 0.5 ? -1 : 1) * (8 + rng() * 20), 16 + rng() * 8, -10 + i * 17 + rng() * 6);
+      mesh.scale.setScalar(1.6 + rng() * 1.6);
+      this.scene.add(mesh);
+      this.clouds.push({ mesh, vx: (rng() - 0.5) * 0.6 });
+    }
+    for (let i = 0; i < 4; i++) {
+      const mesh = makeBirdMesh();
+      mesh.position.set((rng() < 0.5 ? -1 : 1) * (5 + rng() * 15), 9 + rng() * 5, 10 + i * 18 + rng() * 8);
+      this.scene.add(mesh);
+      this.birds.push({ mesh, vx: (rng() < 0.5 ? -1 : 1) * (1 + rng()) });
     }
   }
 
@@ -274,9 +399,33 @@ export class World {
       item.mesh.position.z -= dz;
       if (item.mesh.position.z < -18) {
         item.mesh.position.z += 120;
-        const side = this.sceneryRng() < 0.5 ? -1 : 1;
-        item.mesh.position.x = side * (5.5 + this.sceneryRng() * 6);
+        // Fence lines keep their x (they are the track edge); everything
+        // else re-scatters to a fresh spot in its own band.
+        if (!item.fixedX) {
+          const side = this.sceneryRng() < 0.5 ? -1 : 1;
+          item.mesh.position.x = side * (item.xMin + this.sceneryRng() * (item.xMax - item.xMin));
+        }
       }
+    }
+    // Clouds drift slowly (parallax, not ground speed) and birds cross.
+    for (const c of this.clouds) {
+      c.mesh.position.z -= dz * 0.12;
+      c.mesh.position.x += c.vx * dt;
+      if (c.mesh.position.z < -20) {
+        c.mesh.position.z += 130;
+        c.mesh.position.x = (this.sceneryRng() < 0.5 ? -1 : 1) * (8 + this.sceneryRng() * 20);
+      }
+      if (c.mesh.position.x > 32) c.mesh.position.x = -32;
+      if (c.mesh.position.x < -32) c.mesh.position.x = 32;
+    }
+    for (const b of this.birds) {
+      b.mesh.position.z -= dz * 0.5;
+      b.mesh.position.x += b.vx * dt;
+      if (b.mesh.position.z < -10) {
+        b.mesh.position.z += 100;
+        b.mesh.position.x = (this.sceneryRng() < 0.5 ? -1 : 1) * (5 + this.sceneryRng() * 15);
+      }
+      if (Math.abs(b.mesh.position.x) > 26) b.vx = -b.vx;
     }
     // Scroll the ground texture so the dirt reads as forward motion.
     this.groundTex.offset.y -= (dz / 220) * 24;

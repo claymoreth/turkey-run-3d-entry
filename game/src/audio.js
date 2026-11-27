@@ -1,10 +1,10 @@
 // TURKEY RUN 3D — audio: farmer voice lines (vendored ogg) + synth WebAudio SFX.
 // AudioContext is created only after the first user gesture; M toggles mute.
 const VOICE_FILES = {
-  chase: 'audio/jangan-lari.ogg', // "Jangan lari!"
-  surge: 'audio/kembali-kau.ogg', // "Kembali kau!"
-  caught: 'audio/dapat-kau.ogg', // "Dapat kau!"
-  dinner: 'audio/makan-malam.ogg', // "Makan malam sudah siap!"
+  chase: 'audio/jangan-lari.ogg', // "Don't run!" (file keeps its original Indonesian name)
+  surge: 'audio/kembali-kau.ogg', // "Come back here!"
+  caught: 'audio/dapat-kau.ogg', // "Got you!"
+  dinner: 'audio/makan-malam.ogg', // "Dinner is served!"
 };
 
 export class AudioManager {

@@ -5,6 +5,12 @@ import {
   TURKEY_STAND_HEIGHT, TURKEY_SLIDE_HEIGHT,
 } from './config.js';
 
+// Visual scale of the turkey mesh (1.35x the GLB). The hitbox constants in
+// config.js are unchanged: the visual is deliberately a touch bigger than
+// the hitbox, which is forgiving to the player, and the extra size is what
+// makes the turkey read at screenshot scale from the closer camera.
+export const TURKEY_SCALE = 1.35;
+
 export class Turkey {
   constructor() {
     this.lane = 1; // centre lane
@@ -16,11 +22,16 @@ export class Turkey {
     this.slideTimer = 0;
     this.lean = 0; // visual roll, radians, set by update()
     this.mesh = null;
+    this._baseScale = 1;
     this._prevX = this.x;
   }
 
   attach(mesh) {
     this.mesh = mesh;
+    // Scale the whole model up; applyToMesh keeps this base scale and only
+    // varies the Y component for the slide squash.
+    this._baseScale = TURKEY_SCALE;
+    mesh.scale.setScalar(TURKEY_SCALE);
   }
 
   get targetX() {
@@ -105,8 +116,10 @@ export class Turkey {
     if (!this.mesh) return;
     this.mesh.position.set(this.x, this.y, 0);
     this.mesh.rotation.z = this.lean;
-    // Slide: squash the body down (scale y 0.6) and drop the pivot.
-    const targetScaleY = this.sliding ? 0.6 : 1;
+    // Slide: squash the body down (scale y 0.6 of the base scale) and drop
+    // the pivot. X/Z stay at the base scale so the turkey never shrinks
+    // back to 1.0 after loading at TURKEY_SCALE.
+    const targetScaleY = (this.sliding ? 0.6 : 1) * this._baseScale;
     this.mesh.scale.y += (targetScaleY - this.mesh.scale.y) * 0.5;
     this.mesh.position.y = this.y - (this.sliding ? 0.12 : 0);
     // Little run bob when on the ground.
