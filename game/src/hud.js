@@ -112,13 +112,28 @@ export class Hud {
     if (kind === 'escaped') {
       this.overlayEl.style.justifyContent = 'flex-start';
       this.overlayEl.style.paddingTop = '48px';
+      this.overlayEl.style.paddingBottom = '';
       this.overlayTitleEl.style.fontSize = '34px';
       this.overlaySubEl.style.fontSize = '16px';
       this.overlayScoreEl.style.fontSize = '20px';
       this.overlayHintEl.style.fontSize = '14px';
+    } else if (kind === 'title') {
+      // ROUND 3: push the whole centred block up so the hint line clears
+      // the turkey's tail fan (peak ~y415 px at 1280x720). With
+      // justify-content center, paddingBottom 170 px lifts the block
+      // ~85 px: hint ~y440 -> ~y355, leaving ~30 px clear of the tail.
+      // 3D staging (camera/farmer/turkey) untouched — overlay only.
+      this.overlayEl.style.justifyContent = '';
+      this.overlayEl.style.paddingTop = '';
+      this.overlayEl.style.paddingBottom = '170px';
+      this.overlayTitleEl.style.fontSize = '';
+      this.overlaySubEl.style.fontSize = '';
+      this.overlayScoreEl.style.fontSize = '';
+      this.overlayHintEl.style.fontSize = '';
     } else {
       this.overlayEl.style.justifyContent = '';
       this.overlayEl.style.paddingTop = '';
+      this.overlayEl.style.paddingBottom = '';
       this.overlayTitleEl.style.fontSize = '';
       this.overlaySubEl.style.fontSize = '';
       this.overlayScoreEl.style.fontSize = '';

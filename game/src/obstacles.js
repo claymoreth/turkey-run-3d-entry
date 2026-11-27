@@ -205,7 +205,12 @@ export class ObstacleField {
     // visibly ran through it and the gate light could never reach it. The
     // finish itself is unchanged (distance-based at 1400 m); the gate just
     // arrives at the turkey (z≈-5) as the run ends.
-    if (this.gate) this.gate.position.z -= dz;
+    // ROUND 3: clamp the live gate at z = 3.5 so it never scrolls past
+    // the turkey into the camera (it used to freeze at z≈-5, 1.8 m in
+    // front of the gameplay camera, covering the turkey in the ESCAPED
+    // frame). The gate now stops 3.5 m ahead of the turkey, framing it
+    // inside the arch. Finish stays distance-based (1400 m) — unchanged.
+    if (this.gate) this.gate.position.z = Math.max(this.gate.position.z - dz, 3.5);
     for (const o of this.obstacles) {
       o.z -= dz;
       o.mesh.position.z = o.z;
