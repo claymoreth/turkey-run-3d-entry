@@ -10,7 +10,7 @@ import { AudioManager } from './audio.js';
 import { Turkey } from './turkey.js';
 import { Farmer } from './farmer.js';
 import { ObstacleField } from './obstacles.js';
-import { World } from './world.js';
+import { World, setShadowCaster } from './world.js';
 import { CameraRig, Particles } from './render.js';
 import { Hud } from './hud.js';
 
@@ -80,6 +80,11 @@ export class Game {
       pickupBonus: this.pickupBonus,
       lastNearMiss: this._lastNearMiss,
       lastHit: this._lastHit,
+      // Last rendered frame cost (debug/perf telemetry, round 2).
+      render: {
+        calls: this.world.renderer.info.render.calls,
+        triangles: this.world.renderer.info.render.triangles,
+      },
       // Nearest obstacle ahead (any lane) — verifier telemetry.
       nearest: (() => {
         const o = this.field.nearestAhead(this.turkey.lane, 40);
@@ -101,9 +106,12 @@ export class Game {
     this.hud.hideLoading();
 
     // Attach hero meshes (loaded once, owned by the game, not the field).
+    // Heroes are the only scenery-adjacent meshes that cast shadows.
     this.turkey.attach(this.world.buildMesh('turkey'));
+    setShadowCaster(this.turkey.mesh, true, true);
     this.world.scene.add(this.turkey.mesh);
     this.farmer.attach(this.world.buildMesh('farmer'));
+    setShadowCaster(this.farmer.mesh, true, true);
     this.world.scene.add(this.farmer.mesh);
 
     this.resetRun();
@@ -164,6 +172,7 @@ export class Game {
     this.turkey.reset();
     this.farmer.reset();
     this.field.reset(this.rng);
+    this.world.setGateLight(0, 0, 0, 0);
     this.world.initScenery(this.rng);
     this.world.applyStage(STAGES[0]);
     this.rig.reset();
@@ -186,10 +195,19 @@ export class Game {
     if (shot === 'title') {
       this.turkey.x = 0;
       this.turkey.applyToMesh();
-      this.farmer.gap = 3.5;
+      // ROUND 2 restage: gap 3.5 m put the farmer 3.4 m from the base
+      // camera, and the frustum's bottom edge sat at y≈1.45 m there — only
+      // hat + shoulders survived. The shot camera is pulled back and up
+      // (title-only; gameplay rig untouched) and the farmer moved to gap
+      // 6 m: at (0, 4.2, -11.5) looking at (0, 0.43, 14) his hat (1.98 m)
+      // lands ~y 523 px and his boots ~y 708 px — head-to-toe, below the
+      // title text, with the turkey visible above him instead of hidden
+      // behind him.
+      this.farmer.gap = 6;
       this.farmer._applyMesh(0, 0);
       this.world.applyStage(STAGES[0]);
-      this.rig.update(0.016, 0, 0, 3.5);
+      this.world.camera.position.set(0, 4.2, -11.5);
+      this.world.camera.lookAt(0, 0.43, 14);
       this.hud.showOverlay('title', 0, 0);
     } else if (shot === 'farmyard') {
       this._seedFieldForShot(120, 0);
@@ -214,12 +232,20 @@ export class Game {
       this._updateHud();
     } else if (shot === 'kitchen') {
       this._seedFieldForShot(1150, 2);
-      this.turkey.x = LANES[2];
-      this.turkey.lane = 2;
+      // ROUND 2 restage: the turkey sat in the left lane and read ~90 px.
+      // Same composition as the farmyard shot now — centre lane, mid-jump
+      // (y 0.85), base rig fed gap 7 so no proximity pull-back shrinks it
+      // — target ~120-130 px. The farmer stays close but offset to the
+      // left lane (as in farmyard) so he cannot occlude the turkey.
+      this.turkey.x = LANES[1];
+      this.turkey.lane = 1;
+      this.turkey.y = 0.85;
+      this.turkey.jumping = true;
       this.turkey.applyToMesh();
-      this.farmer.gap = 2.2;
+      this.farmer.gap = 1.0;
       this.farmer.state = 'SURGE';
       this.farmer._applyMesh(0, 0);
+      this.farmer.mesh.position.x = -2.2;
       this.distanceM = 1150;
       this.score = 1240;
       this.corn = 11;
@@ -227,7 +253,7 @@ export class Game {
       this.stageIndex = 2;
       this.speed = STAGES[2].speed;
       this.world.applyStage(STAGES[2]);
-      this.rig.update(0.016, LANES[2], 0, 2.2);
+      this.rig.update(0.016, 0, 0.85, 7);
       this.hud.hideOverlay();
       this._updateHud();
     } else if (shot === 'escaped') {
@@ -245,7 +271,13 @@ export class Game {
       const gate = this.world.buildMesh('gate');
       gate.position.set(0, 0, 1.5);
       gate.scale.setScalar(1.4);
+      setShadowCaster(gate, true, false);
       this.world.scene.add(gate);
+      // ROUND 2 gate light: warm point light on the camera side of the
+      // gate, above the turkey — the kitchen sun comes from ahead, so the
+      // turkey's camera-facing side was a black silhouette inside the
+      // arch. This fills it so the turkey still reads.
+      this.world.setGateLight(0, 4, -0.5, 70);
       this.farmer.gap = 14;
       this.farmer._applyMesh(0, 0);
       this.stageIndex = 2;
@@ -420,6 +452,16 @@ export class Game {
 
     this.field.update(dt, speed, this.distanceM, this.stageIndex, this.gameTime);
     this.world.updateScenery(dt, speed);
+
+    // Gate rim light (round 2): tracks the gate once it is close enough
+    // to matter (z < 45), 2 m on the camera side of the arch so the
+    // turkey is lit as it runs into the gate. Off otherwise (a point
+    // light in the scene costs a shader slot even at intensity 0).
+    if (this.field.gate && this.field.gate.position.z < 45) {
+      this.world.setGateLight(0, 4, this.field.gate.position.z - 2, 80);
+    } else {
+      this.world.setGateLight(0, 0, 0, 0);
+    }
 
     // Farmer chase.
     const touch = this.farmer.update(dt, speed, this.stage.speed);

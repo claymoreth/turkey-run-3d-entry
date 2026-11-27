@@ -11,6 +11,17 @@ function hitHalf(type) {
   return { x: (s.x * HITBOX_SCALE) / 2, z: (s.z * HITBOX_SCALE) / 2 };
 }
 
+// PERF (round 2): obstacles are the only scenery-adjacent meshes that cast
+// shadows. The traverse guard keeps the Node balance harness working — its
+// fake meshes have no traverse() and simply skip the flags.
+function setObstacleCaster(mesh) {
+  if (mesh && typeof mesh.traverse === 'function') {
+    mesh.traverse((child) => {
+      if (child.isMesh) { child.castShadow = true; child.receiveShadow = false; }
+    });
+  }
+}
+
 export class ObstacleField {
   constructor(scene, buildMesh) {
     this.scene = scene;
@@ -58,6 +69,7 @@ export class ObstacleField {
   _spawnObstacle(kind, lane, z) {
     const def = OBSTACLE_TYPES[kind];
     const mesh = this.buildMesh(def.asset);
+    setObstacleCaster(mesh);
     mesh.position.set(LANES[lane], 0, z);
     if (kind === 'beam') mesh.position.y = 0.55;
     if (kind === 'knifeSwing') {
@@ -178,6 +190,7 @@ export class ObstacleField {
     if (!this.gateSpawned && distanceM > FINISH_DISTANCE - 90) {
       this.gateSpawned = true;
       this.gate = this.buildMesh('gate');
+      setObstacleCaster(this.gate);
       this.gate.position.set(0, 0, SPAWN_AHEAD_Z);
       this.scene.add(this.gate);
     }
@@ -187,6 +200,12 @@ export class ObstacleField {
     }
 
     // Move everything toward the turkey (turkey stays near z = 0).
+    // ROUND 2: the finish gate scrolls with the world too — it used to sit
+    // frozen at z=85 while the run ended by distance, so the turkey never
+    // visibly ran through it and the gate light could never reach it. The
+    // finish itself is unchanged (distance-based at 1400 m); the gate just
+    // arrives at the turkey (z≈-5) as the run ends.
+    if (this.gate) this.gate.position.z -= dz;
     for (const o of this.obstacles) {
       o.z -= dz;
       o.mesh.position.z = o.z;
