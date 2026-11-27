@@ -1,8 +1,8 @@
 # 🦃 Turkey Run 3D
 
-[![make.fun](https://make.fun/badge/turkey-run-game-01.svg)](https://make.fun/bounty/turkey-run-game-01)
-[![Prize $250](https://img.shields.io/badge/prize-%24250-gold)](https://make.fun/bounty/turkey-run-game-01)
-[![Top 20](https://img.shields.io/badge/top-20-green)](https://make.fun/bounty/turkey-run-game-01)
+[![Competition](https://make.fun/badge/turkey-run-game-01.svg)](https://make.fun/bounty/turkey-run-game-01)
+[![Rank](https://make.fun/badge/turkey-run-game-01/claymoreth/turkey-run-3d-entry/rank.svg)](https://make.fun/bounty/turkey-run-game-01)
+[![Reward](https://make.fun/badge/turkey-run-game-01/claymoreth/turkey-run-3d-entry/reward.svg)](https://make.fun/bounty/turkey-run-game-01)
 
 3D third-person lane runner built with Three.js r187 (vendored, no network).
 You are the turkey. The farmer is right behind you — and dinner is at stake.
@@ -25,7 +25,7 @@ pumpkins, swinging knives, oven firejets, and falling knives. Grab corn
 | Click / tap | Start |
 
 The farmer chases with a real FSM: he closes in when you stumble, lunges
-when he gets close (listen for "Kembali kau!"), and falls behind when you
+when he gets close (listen for "Come back here!"), and falls behind when you
 pull away. If he touches you, you lose a life and get knocked forward.
 Three lives — then it's dinner time.
 
