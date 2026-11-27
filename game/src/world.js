@@ -7,8 +7,8 @@
 // tight frustum, and shadows cast ONLY by the heroes + near obstacles.
 // Scenery never casts/receives shadows. See buildMesh / setShadowCaster.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.min.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.min.js';
 import { STAGES } from './config.js';
 
 // Opt-in shadow casting for a mesh tree (heroes + near obstacles + gate).
