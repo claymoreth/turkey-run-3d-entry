@@ -286,7 +286,19 @@ export class Game {
       // gate, above the turkey — the kitchen sun comes from ahead, so the
       // turkey's camera-facing side was a black silhouette inside the
       // arch. This fills it so the turkey still reads.
-      this.world.setGateLight(0, 4, -0.5, 70);
+      // ROUND 5 (final sweep): the staged shot never ran the live finish
+      // ramp, so it only had this 70 gate light and NO celebration fill —
+      // the turkey still read dark inside the arch. Mirror the live
+      // escaped end state (see _frame, escaped branch, _escapedT = 1):
+      // gate light 70 -> 120 (live full ramp) + celebration fill at the
+      // live position (turkey.x 0, y 3.4, z -2.4) at full 150, so the
+      // brown + cream feathers read as bright as the live finish frame.
+      // Staging-only: _setupShot runs only for ?shot=, mode 'shot' never
+      // ticks _frame/_tick, so gameplay, finish logic and balance are
+      // untouched.
+      this._escapedT = 1;
+      this.world.setGateLight(0, 4, -0.5, 120);
+      this.world.setCelebrationLight(0, 3.4, -2.4, 150);
       this.farmer.gap = 14;
       this.farmer._applyMesh(0, 0);
       this.stageIndex = 2;
